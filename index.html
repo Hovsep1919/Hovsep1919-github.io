@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="hy">
+<head>
+  <meta charset="UTF-8">
+  <title>Կրիպտո Վերլուծություն</title>
+  <style>
+    body {
+      background-color: #0f0f0f;
+      color: #fff;
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 20px;
+    }
+    h1 {
+      text-align: center;
+    }
+    .crypto-list {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      margin-top: 30px;
+    }
+    .crypto-card {
+      background-color: #1e1e1e;
+      border-radius: 10px;
+      padding: 20px;
+      width: 90%;
+      max-width: 600px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    }
+    .crypto-card h2 {
+      margin: 0 0 10px 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .price {
+      font-size: 1.3em;
+      margin: 10px 0;
+    }
+    .change {
+      margin: 5px 0;
+    }
+    .advice {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+    .positive {
+      color: #00ff00;
+    }
+    .negative {
+      color: #ff4d4d;
+    }
+    .exchanges,
+    .exchange-analysis {
+      margin-top: 10px;
+      font-size: 0.9em;
+    }
+    .exchanges a {
+      color: #1e90ff;
+      text-decoration: none;
+    }
+    .exchanges a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <h1>📊 Կրիպտոարժույթների Վերլուծություն</h1>
+  <div class="crypto-list" id="cryptoList"></div>
+
+  <script>
+    async function fetchMarketData() {
+      try {
+        const response = await fetch(
+          'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=5&page=1&sparkline=true'
+        );
+        const data = await response.json();
+        displayCryptos(data);
+      } catch (error) {
+        console.error('Տվյալների ստացման սխալ:', error);
+      }
+    }
+
+    async function fetchExchanges(coinId) {
+      try {
+        const resp = await fetch(
+          `https://api.coingecko.com/api/v3/coins/${coinId}/tickers`
+        );
+        const data = await resp.json();
+        return data.tickers
+          .filter(t => t.converted_last.usd && t.trade_url)
+          .slice(0, 7);
+      } catch (error) {
+        console.error('Բորսաների տվյալների սխալ:', error);
+        return [];
+      }
+    }
+
+    function formatNumber(num) {
+      return num.toLocaleString('en-US', { maximumFractionDigits: 0 });
+    }
+
+    function average(arr) {
+      return arr.reduce((a, b) => a + b, 0) / arr.length;
+    }
+
+    function calculateEMA(data, period) {
+      const k = 2 / (period + 1);
+      let ema = data[0];
+      for (let i = 1; i < data.length; i++) {
+        ema = (data[i] - ema) * k + ema;
+      }
+      return ema;
+    }
+
+    function calculateRSI(data) {
+      const gains = [];
+      const losses = [];
+      for (let i = 1; i < data.length; i++) {
+        const diff = data[i] - data[i - 1];
+        if (diff >= 0) gains.push(diff);
+        else losses.push(-diff);
+      }
+      const avgGain = (gains.reduce((a, b) => a + b, 0) / gains.length) || 0;
+      const avgLoss = (losses.reduce((a, b) => a + b, 0) / losses.length) || 0;
+      const rs = avgGain / avgLoss;
+      const rsi = 100 - (100 / (1 + rs));
+      return rsi.toFixed(2);
+    }
+
+    function calculateMACD(data) {
+      const shortEMA = calculateEMA(data, 12);
+      const longEMA = calculateEMA(data, 26);
+      return (shortEMA - longEMA).toFixed(2);
+    }
+
+    function calculateBollingerBands(data) {
+      const avg = data.reduce((a, b) => a + b, 0) / data.length;
+      const stdDev = Math.sqrt(
+        data.reduce((sum, val) => sum + Math.pow(val - avg, 2), 0) / data.length
+      );
+      const upper = avg + 2 * stdDev;
+      const lower = avg - 2 * stdDev;
+      return `Upper: $${upper.toFixed(2)} | Lower: $${lower.toFixed(2)}`;
+    }
+
+    function getAdvice(change, volume, marketCap) {
+      if (marketCap > 1e10 && change < 0 && volume > 5e8) {
+        return 'Գինը նվազել է, սակայն շուկայական կապիտալը բարձր է և ծավալը ակտիվ։';
+      } else if (change > 5 && volume > 1e9) {
+        return 'Գինը բարձրացել է, ակտիվ շահարկում կա։ Հնարավոր է՝ գերհատուցված է կարճաժամկետում։';
+      } else if (change < -10) {
+        return 'Կտրուկ անկում։ Հնարավոր է շուկան պանիկայի մեջ է։ Զգուշություն։';
+      } else {
+        return 'Փոփոխებები կայուն են։ Հնարավոր է դիտարկելու արժանի։';
+      }
+    }
+
+    function getBuyDecision(change, volume, marketCap) {
+      if (change < -5 && marketCap > 5e9 && volume > 5e8) {
+        return { text: 'Այո՛, այս պահին դիտարկիր որպես ներդրումային հնարավորություն։', color: '#00ff00' };
+      } else if (change > 10 && volume > 1e9) {
+        return { text: 'Ոչ հիմա։ Գինը կարող է չափազանց բարձր լինել։', color: '#ffcc00' };
+      } else if (change < -15) {
+        return { text: 'Ո՛չ։ Վտանգավոր անկում։', color: '#ff4d4d' };
+      } else {
+        return { text: 'Դիտարկիր, բայց մի շտապիր։', color: '#ffffff' };
+      }
+    }
+
+    async function displayCryptos(cryptos) {
+      const container = document.getElementById('cryptoList');
+      container.innerHTML = '';
+      for (const coin of cryptos) {
+        const card = document.createElement('div');
+        card.className = 'crypto-card';
+
+        const { current_price: price, price_change_percentage_24h: change24h, market_cap: marketCap, total_volume: volume, image, id } = coin;
+        const sparkPrices = coin.sparkline_in_7d.price;
+
+        const exchanges = await fetchExchanges(id);
+        const exPrices = exchanges.map(t => t.converted_last.usd);
+        const links = exchanges.map(t => `<a href="${t.trade_url}" target="_blank">${t.market.name}</a>`).join(', ');
+
+        const avg = exPrices.length ? average(exPrices) : 0;
+        const min = exPrices.length ? Math.min(...exPrices) : 0;
+        const max = exPrices.length ? Math.max(...exPrices) : 0;
+        const minEx = exchanges.length ? exchanges.find(t => t.converted_last.usd === min) : { market: { name: 'N/A' } };
+        const maxEx = exchanges.length ? exchanges.find(t => t.converted_last.usd === max) : { market: { name: 'N/A' } };
+        const spread = avg ? (((max - min) / avg) * 100).toFixed(2) : '0.00';
+
+        const rsi = calculateRSI(sparkPrices);
+        const macd = calculateMACD(sparkPrices);
+        const bollinger = calculateBollingerBands(sparkPrices);
+
+        const advice = getAdvice(change24h, volume, marketCap);
+        const decision = getBuyDecision(change24h, volume, marketCap);
+
+        card.innerHTML = `
+          <h2><img src="${image}" alt="${coin.name}" width="24"> ${coin.name} (${coin.symbol.toUpperCase()})</h2>
+          <p class="price">💰 Գին: $${price.toFixed(2)}</p>
+          <p class="change ${change24h >= 0 ? 'positive' : 'negative'}">📈 Փոփոխություն 24ժ: ${change24h?.toFixed(2) ?? '0.00'}%</p>
+          <p>🏦 Շուկայական կապիտալ: $${formatNumber(marketCap)}</p>
+          <p>🔁 Օրական ծավալ: $${formatNumber(volume)}</p>
+          <p class="advice">📊 RSI: ${rsi} | 📈 MACD: ${macd} | 📉 Bollinger Bands: ${bollinger}</p>
+          <p class="advice">📊 Վերլուծություն: ${advice}</p>
+          <p class="advice">✅ Գնման որոշում: <span style="color:${decision.color}">${decision.text}</span></p>
+
+          <p class="exchange-analysis">
+            💹 Բորսաների գների վերլուծություն:<br>
+            ▸ Միջին գին: $${avg.toFixed(2)}<br>
+            ▸ Բարձր գին՝ ${maxEx.market.name} → $${max.toFixed(2)}<br>
+            ▸ Ցածր գին՝ ${minEx.market.name} → $${min.toFixed(2)}<br>
+            ▸ Տատանում՝ ${spread}%<br>
+          </p>
+          <p class="exchanges">📈 Առևտուր бորսաներում: ${links || 'Տվյալներ չկան'}</p>
+        `;
+
+        container.appendChild(card);
+      }
+    }
+
+    fetchMarketData();
+  </script>
+</body>
+</html>
